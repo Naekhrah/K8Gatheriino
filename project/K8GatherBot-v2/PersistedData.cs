@@ -1,119 +1,248 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Text;
-using CsvHelper;
-
-namespace K8GatherBotv2
+﻿namespace K8GatherBotv2
 {
-    public class PersistedData
+    using System.Collections.Generic;
+    using System.IO;
+    using System.Linq;
+    using System.Threading.Tasks;
+    using System.Text;
+    using CsvHelper;
+
+    using K8GatherBotv2.Domain;
+
+    /// <summary>
+    /// The persisted data.
+    /// </summary>
+    /// <seealso cref="IData" />
+    public class PersistedData : IData
     {
-        private string fatkidFileName = "fatkid.csv";
-        private string highScoreFileName = "highscores.csv";
-        private string thinkidFileName = "thinkid.csv";
-        private string captainsFileName = "captains.csv";
+        private readonly List<UserData> fatKids = new List<UserData>();
+        private readonly List<UserData> highScores = new List<UserData>();
+        private readonly List<UserData> thinKids = new List<UserData>();
+        private readonly List<UserData> captains = new List<UserData>();
+        private const string FatkidFileName = "fatkid.csv";
+        private const string HighScoreFileName = "highscores.csv";
+        private const string ThinkidFileName = "thinkid.csv";
+        private const string CaptainsFileName = "captains.csv";
 
-        private List<UserData> fatKids = new List<UserData>();
-        private List<UserData> highScores = new List<UserData>();
-        private List<UserData> thinKids = new List<UserData>();
-        private List<UserData> captains = new List<UserData>();
-
+        /// <summary>
+        /// Initializes a new instance of the <see cref="PersistedData"/> class.
+        /// </summary>
         public PersistedData()
         {
-            InitData();
+            this.InitData();
         }
 
-        private void InitData()
+        /// <inheritdoc />
+        public async Task<string> GetPlayerId(string username)
         {
-            InitList(fatKids, fatkidFileName);
-            InitList(thinKids, thinkidFileName);
-            InitList(highScores, highScoreFileName);
-            InitList(captains, captainsFileName);
+            foreach (var datalist in this.DataLists())
+            {
+                var userData = datalist.SingleOrDefault(f => f.UserName == username);
+                if (userData != null)
+                {
+                    return await Task.FromResult(userData.Id);
+                }
+            }
+
+            return null;
         }
 
-        private void InitList(List<UserData> data, string fileName)
+        /// <inheritdoc />
+        public async Task AddFatKid(Player player)
         {
-            if (!File.Exists(@fileName))
+            Add(this.fatKids, player.Id, player.Name);
+            await PersistList(this.fatKids, FatkidFileName);
+        }
+
+        /// <inheritdoc />
+        public async Task AddThinKid(Player player)
+        {
+            Add(this.thinKids, player.Id, player.Name);
+            await PersistList(this.thinKids, ThinkidFileName);
+        }
+
+        /// <inheritdoc />
+        public async Task AddHighScores(IEnumerable<Player> players)
+        {
+            foreach (var player in players)
+            {
+                Add(this.highScores, player.Id, player.Name);
+            }
+
+            await PersistList(this.highScores, HighScoreFileName);
+        }
+
+        /// <inheritdoc />
+        public async Task AddCaptains(IEnumerable<Player> players)
+        {
+            foreach (var player in players)
+            {
+                Add(this.captains, player.Id, player.Name);
+            }
+
+            await PersistList(this.captains, CaptainsFileName);
+        }
+
+        /// <inheritdoc />
+        public async Task AddCaptain(Player player)
+        {
+            Add(this.captains, player.Id, player.Name);
+            await PersistList(this.captains, CaptainsFileName);
+        }
+
+        /// <inheritdoc />
+        public async Task RemoveCaptain(Player player)
+        {
+            Minus(this.captains, player.Id, player.Name);
+            await PersistList(this.captains, CaptainsFileName);
+        }
+
+        /// <inheritdoc />
+        public async Task<string> GetFatKidInfo(Player player, string response)
+        {
+            return await Task.FromResult(GetInfo(this.fatKids, player, response));
+        }
+
+        /// <inheritdoc />
+        public async Task<string> GetThinKidInfo(Player player, string response)
+        {
+            return await Task.FromResult(GetInfo(this.thinKids, player, response));
+        }
+
+        /// <inheritdoc />
+        public async Task<string> GetHighScoreInfo(Player player, string response)
+        {
+            return await Task.FromResult(GetInfo(this.highScores, player, response));
+        }
+
+        /// <inheritdoc />
+        public async Task<string> GetCaptainInfo(Player player, string response)
+        {
+            return await Task.FromResult(GetInfo(this.captains, player, response));
+        }
+
+        /// <inheritdoc />
+        public async Task<string> GetFatKidTop10()
+        {
+            return await Task.FromResult(GetTop10Info(this.fatKids));
+        }
+
+        /// <inheritdoc />
+        public async Task<string> GetThinKidTop10()
+        {
+            return await Task.FromResult(GetTop10Info(this.thinKids));
+        }
+
+        /// <inheritdoc />
+        public async Task<string> GetHighScoreTop10()
+        {
+            return await Task.FromResult(GetTop10Info(this.highScores));
+        }
+
+        /// <inheritdoc />
+        public async Task<string> GetCaptainTop10()
+        {
+            return await Task.FromResult(GetTop10Info(this.captains));
+        }
+
+        private static string GetTop10Info(IReadOnlyList<UserData> data)
+        {
+            if (data.Count == 0)
+            {
+                return ":(";
+            }
+
+            var list = "";
+            for (var i = 0; i < 10 && i != data.Count; i++)
+            {
+                var entry = data[i];
+                list += i + 1 + ". " + entry.UserName + " / " + entry.Count + "\n";
+            }
+            return list;
+        }
+
+        public async Task<bool> IsNewKid(Player player, int newKidThreshold)
+        {
+            var count = 0;
+            var fkentry = this.fatKids.Find(x => x.Id.Equals(player.Id));
+            if (fkentry != null)
+            {
+                count += fkentry.Count;
+            }
+
+            var tkentry = this.thinKids.Find(x => x.Id.Equals(player.Id));
+            if (tkentry != null)
+            {
+                count += tkentry.Count;
+            }
+
+            return await Task.FromResult(count < newKidThreshold);
+        }
+
+        public async Task<bool> AreAllNewKids(IEnumerable<Player> players, int threshold)
+        {
+            foreach(var player in players)
+            {
+                if (!await this.IsNewKid(player, threshold))
+                {
+                    return await Task.FromResult(false);
+                }
+            }
+
+            return await Task.FromResult(true);
+        }
+
+        private static void InitList(List<UserData> data, string fileName)
+        {
+            if (!File.Exists(fileName))
             {
                 return;
             }
-            using (TextReader fileReader = File.OpenText(@fileName))
+            using (var fileReader = File.OpenText(fileName))
             {
-                CsvReader csvFile = new CsvReader(fileReader);
+                var csvFile = new CsvReader(fileReader);
                 csvFile.Configuration.HasHeaderRecord = false;
                 csvFile.Read();
                 var records = csvFile.GetRecords<UserData>();
-                foreach (UserData pair in records)
-                {
-                    data.Add(pair);
-                }
+                data.AddRange(records);
             }
         }
 
-        private void PersistList(List<UserData> data, string fileName)
+        private static async Task PersistList(List<UserData> data, string fileName)
         {
-            using (TextWriter writer = new StreamWriter(File.Open(@fileName, FileMode.Create)))
+            using (var writer = new StreamWriter(File.Open(fileName, FileMode.Create)))
             {
                 var csv = new CsvWriter(writer);
                 csv.Configuration.Encoding = Encoding.UTF8;
                 data.Sort();
                 csv.WriteRecords(data);
-                writer.Flush();
+                await writer.FlushAsync();
             }
         }
 
-        public void AddFatKid(string id, string userName)
+        private static string GetInfo(List<UserData> data, Player player, string response)
         {
-            Add(fatKids, id, userName);
-            PersistList(fatKids, fatkidFileName);
-        }
-
-        public void AddThinKid(string id, string userName)
-        {
-            Add(thinKids, id, userName);
-            PersistList(thinKids, thinkidFileName);
-        }
-
-        public void AddHighScores(List<string> ids, List<string> userNames)
-        {
-            for (int i = 0; i < ids.Count; i++)
+            if (player == null)
             {
-                Add(highScores, ids[i], userNames[i]);
+                return null;
             }
-            PersistList(highScores, highScoreFileName);
+
+            var entry = data.Find(x => x.Id.Equals(player.Id));
+
+            return entry == null
+                ? string.Format(response, player.Name, 0, data.Count, data.Count)
+                : string.Format(response, entry.UserName, entry.Count, data.IndexOf(entry) + 1, data.Count);
         }
 
-        public void AddCaptains(string cid, string cUserName1, string cid2, string cUserName2)
+        private static void Minus(List<UserData> data, string id, string userName)
         {
-            Add(captains, cid, cUserName1);
-            Add(captains, cid2, cUserName2);
-            PersistList(captains, captainsFileName);
+            var entry = data.Find(x => x.Id.Equals(id));
+            entry?.Minus();
         }
 
-        public void AddCaptain(string cid, string cUserName1)
+        private static void Add(List<UserData> data, string id, string userName)
         {
-            Add(captains, cid, cUserName1);
-            PersistList(captains, captainsFileName);
-        }
-
-        public void RemoveCaptain(string cid, string cUserName)
-        {
-            Minus(captains, cid, cUserName);
-            PersistList(captains, captainsFileName);
-        }
-
-        private void Minus(List<UserData> data, string id, string userName)
-        {
-            UserData entry = data.Find(x => x.id.Equals(id));
-            if (entry != null)
-            {
-                entry.Minus();
-            }
-        }
-
-        private void Add(List<UserData> data, string id, string userName)
-        {
-            UserData entry = data.Find(x => x.id.Equals(id));
+            var entry = data.Find(x => x.Id.Equals(id));
 
             if (entry == null)
             {
@@ -122,158 +251,32 @@ namespace K8GatherBotv2
             }
             else
             {
-                entry.userName = userName;
+                entry.UserName = userName;
             }
             entry.Add();
         }
 
-        public string GetFatKidInfo(Tuple<string, string> idUsername, string response)
+        /// <summary>
+        /// Initializes the data.
+        /// </summary>
+        private void InitData()
         {
-            return GetInfo(fatKids, idUsername, response);
+            InitList(this.fatKids, FatkidFileName);
+            InitList(this.thinKids, ThinkidFileName);
+            InitList(this.highScores, HighScoreFileName);
+            InitList(this.captains, CaptainsFileName);
         }
 
-        public string GetThinKidInfo(Tuple<string, string> idUsername, string response)
+        /// <summary>
+        /// Enumerates the data lists.
+        /// </summary>
+        /// <returns>The <see cref="IEnumerable{T}"/>.</returns>
+        private IEnumerable<List<UserData>> DataLists()
         {
-            return GetInfo(thinKids, idUsername, response);
-        }
-
-        public string GetHighScoreInfo(Tuple<string, string> idUsername, string response)
-        {
-            return GetInfo(highScores, idUsername, response);
-        }
-
-        public string GetCaptainInfo(Tuple<string, string> idUsername, string response)
-        {
-            return GetInfo(captains, idUsername, response);
-        }
-
-        private string GetInfo(List<UserData> data, Tuple<string, string> idUsername, string response)
-        {
-            UserData entry = null;
-            if (idUsername.Item1 != null)
-            {
-                entry = data.Find(x => x.id.Equals(idUsername.Item1));
-            }
-            else
-            {
-                entry = data.Find(x => x.userName.Equals(idUsername.Item2));
-            }
-
-            if (entry == null)
-            {
-                return String.Format(response, idUsername.Item2, 0, data.Count, data.Count);
-            }
-            return String.Format(response, entry.userName, entry.count, data.IndexOf(entry) + 1, data.Count);
-        }
-
-        public string GetFatKidTop10()
-        {
-            return GetTop10Info(fatKids);
-        }
-
-        public string GetThinKidTop10()
-        {
-            return GetTop10Info(thinKids);
-        }
-
-        public string GetHighScoreTop10()
-        {
-            return GetTop10Info(highScores);
-        }
-
-        public string GetCaptainTop10()
-        {
-            return GetTop10Info(captains);
-        }
-
-        private string GetTop10Info(List<UserData> data)
-        {
-            if (data.Count == 0)
-            {
-                return ":(";
-            }
-            string list = "";
-            for (int i = 0; i < 10 && i != data.Count; i++)
-            {
-                UserData entry = data[i];
-                list += i + 1 + ". " + entry.userName + " / " + entry.count + "\n";
-            }
-            return list;
-        }
-
-        public bool IsNewKid(string id, int newKidThreshold)
-        {
-            int count = 0;
-
-            var hsEntry = highScores.Find(x => x.id.Equals(id));
-            if (hsEntry != null)
-            {
-                Console.WriteLine("CAPTAIN CHECK - GAMES: " + hsEntry.count + " NAME: " + hsEntry.userName + " CAN BE CAPTAIN: " + (hsEntry.count > newKidThreshold));
-                count += hsEntry.count;
-            }
-            return count < newKidThreshold;
-        }
-
-        public bool AreAllNewKids(List<string> ids, int newKidThreshold)
-        {
-            foreach (var id in ids)
-            {
-                if (!IsNewKid(id, newKidThreshold))
-                {
-                    return false;
-                }
-            }
-            return true;
-        }
-    }
-
-    public class UserData : IComparable<UserData>, IEquatable<UserData>
-    {
-        public string id { get; set; }
-        public string userName { get; set; }
-        public int count { get; set; }
-
-        public UserData()
-        {
-
-        }
-
-        public UserData(string id, string username)
-        {
-            this.id = id;
-            this.userName = username;
-            this.count = 0;
-        }
-
-        public UserData(string id, string username, int count)
-        {
-            this.id = id;
-            this.userName = username;
-            this.count = count;
-        }
-
-        public int CompareTo(UserData other)
-        {
-            if (this.count == other.count)
-            {
-                return string.Compare(this.userName, other.userName, StringComparison.OrdinalIgnoreCase);
-            }
-            return other.count.CompareTo(this.count);
-        }
-
-        public bool Equals(UserData other)
-        {
-            return this.id.Equals(other.id);
-        }
-
-        internal void Add()
-        {
-            count++;
-        }
-
-        internal void Minus()
-        {
-            count--;
+            yield return this.fatKids;
+            yield return this.thinKids;
+            yield return this.highScores;
+            yield return this.captains;
         }
     }
 }

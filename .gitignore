@@ -1,0 +1,9 @@
+Thumbs.db
+*.suo
+*.user
+*.cache
+_ReSharper.*
+.vs
+bin
+obj
+packages
